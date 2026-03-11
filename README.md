@@ -30,6 +30,7 @@ terraform apply
 
 # Capture the Control Plane IP
 export CP_IP=$(echo google_compute_instance.cp_node.network_interface[0].access_config[0].nat_ip | terraform console | tr -d '"')
+export NODE_IP=$(echo google_compute_instance.worker_node.network_interface[0].access_config[0].nat_ip | terraform console | tr -d '"')
 
 # SSH in and configure kubectl locally
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP}
