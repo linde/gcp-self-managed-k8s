@@ -5,6 +5,11 @@ resource "google_compute_instance" "cp_node" {
   machine_type   = var.machine_type
   zone           = local.zone
   can_ip_forward = true
+  tags           = ["k8s-node"]
+
+  service_account {
+    scopes = ["cloud-platform"]
+  }
 
   boot_disk {
 
@@ -48,7 +53,7 @@ resource "ssh_resource" "get_join_command" {
 
   commands = [
     # Poll until the admin.conf exists, ensuring kubeadm init is done
-    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 10; done",
+    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 3; done",
     "sudo kubeadm token create --print-join-command"
   ]
 

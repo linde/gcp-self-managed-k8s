@@ -4,6 +4,11 @@ resource "google_compute_instance" "worker_node" {
   machine_type   = var.machine_type
   zone           = local.zone
   can_ip_forward = true
+  tags           = ["k8s-node"]
+
+  service_account {
+    scopes = ["cloud-platform"]
+  }
 
   boot_disk {
     initialize_params {
