@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# 1. Kernel and System Prep
+modprobe overlay
+modprobe br_netfilter
+
+swapoff -a
+# Also disable in fstab to be extra safe
+sed -i '/swap/s/^/#/' /etc/fstab
+
+cat <<EOF > /etc/modules-load.d/containerd.conf
+overlay
+br_netfilter
+EOF
+
+cat <<EOF > /etc/sysctl.d/99-kubernetes-cri.conf
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+# Apply sysctl parameters immediately
+sysctl --system
+
+# Hold gcloud/etc for now to speed apt upgrade
+apt-mark hold google-cloud-*
+
+# Install Containerd & Dependencies
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+DEBIAN_FRONTEND=noninteractive apt-get install -y gpg containerd containernetworking-plugins
+
+# Configure and Start Containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+sed -i 's-bin_dir = "/usr/lib/cni"-bin_dir = "/opt/cni/bin"-' /etc/containerd/config.toml
+
+systemctl restart containerd
+systemctl enable containerd
+
+# Install Kubernetes Components (v${k8s_version})
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+# Node-specific initialization
+%{ if is_control_plane }
+if [ ! -f /etc/kubernetes/admin.conf ]; then
+  echo ">>> Bootstrapping Kubernetes control plane..."
+  kubeadm init --pod-network-cidr=192.168.0.0/16
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+  ## install pod networking
+  sleep 15
+  kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.3/manifests/tigera-operator.yaml
+  sleep 10
+  kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.3/manifests/custom-resources.yaml
+
+  echo ">>> Kubernetes cluster initialized!"
+else
+  echo ">>> Kubernetes is already initialized. Skipping kubeadm init."
+fi
+%{ else }
+if [ ! -f /etc/kubernetes/kubelet.conf ]; then
+  echo ">>> Joining Kubernetes cluster..."
+  ${join_command}
+else
+  echo ">>> Kubernetes is already joined. Skipping kubeadm join."
+fi
+%{ endif }
