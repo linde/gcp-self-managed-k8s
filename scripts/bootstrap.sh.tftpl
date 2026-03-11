@@ -52,9 +52,7 @@ apt-mark hold kubelet kubeadm kubectl
 if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Bootstrapping Kubernetes control plane..."
   
-  # Fetch internal IP and use it as the advertise address for robust connectivity
-  INTERNAL_IP=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
-  kubeadm init --pod-network-cidr=192.168.0.0/16 --apiserver-advertise-address=$INTERNAL_IP
+  kubeadm init --pod-network-cidr=192.168.0.0/16 
 
   export KUBECONFIG=/etc/kubernetes/admin.conf
   mkdir -p /root/.kube
@@ -69,17 +67,23 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
   tar xzvfC cilium-linux-$${CLI_ARCH}.tar.gz /usr/local/bin
   rm cilium-linux-$${CLI_ARCH}.tar.gz{,.sha256sum}
 
-  # Install Cilium into the cluster
-  cilium install --version 1.17.1
+  # Install Cilium with flags that handle the GCP /32 mask correctly
+  cilium install --version 1.17.1 \
+    --set routingMode=native \
+    --set ipv4NativeRoutingCIDR=${k8s_subnet_cidr} \
+    --set ipam.mode=kubernetes \
+    --set k8s.requireIPv4PodCIDR=true \
+    --set endpointRoutes.enabled=true \
+    --set gcp.enabled=true \
+    --set autoDirectNodeRoutes=true
 
-  echo ">>> Kubernetes cluster initialized with Cilium!"
+  echo ">>> Kubernetes cluster initialized with Cilium (GCP Optimized)!"
 else
   echo ">>> Kubernetes is already initialized. Skipping kubeadm init."
 fi
 %{ else }
 if [ ! -f /etc/kubernetes/kubelet.conf ]; then
   echo ">>> Joining Kubernetes cluster (with retries)..."
-  # Retry join for up to 5 minutes to handle control plane API server startup
   for i in {1..30}; do
     if ${join_command}; then
       echo ">>> Successfully joined the cluster!"

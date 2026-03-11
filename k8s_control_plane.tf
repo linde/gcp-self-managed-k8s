@@ -33,6 +33,7 @@ resource "google_compute_instance" "cp_node" {
   # Use templatefile for cleaner, idiomatic bootstrap scripts
   metadata_startup_script = templatefile("${path.module}/scripts/bootstrap.sh.tftpl", {
     k8s_version      = var.k8s_version
+    k8s_subnet_cidr  = var.k8s_subnet_cidr
     is_control_plane = true
     join_command     = "" # Not needed for control plane
   })

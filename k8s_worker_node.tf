@@ -31,6 +31,7 @@ resource "google_compute_instance" "worker_node" {
   # Use templatefile with the join command captured via SSH
   metadata_startup_script = templatefile("${path.module}/scripts/bootstrap.sh.tftpl", {
     k8s_version      = var.k8s_version
+    k8s_subnet_cidr  = var.k8s_subnet_cidr
     is_control_plane = false
     join_command     = trimspace(ssh_resource.get_join_command.result)
   })

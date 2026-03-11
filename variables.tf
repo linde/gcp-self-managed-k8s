@@ -27,6 +27,12 @@ variable "os_image" {
   description = "The boot image for the instances."
 }
 
+variable "k8s_subnet_cidr" {
+  type        = string
+  default     = "10.0.0.0/24"
+  description = "The CIDR range for the Kubernetes subnet."
+}
+
 locals {
   zone        = "${var.region}-a"
   rand_suffix = random_id.rand.hex
