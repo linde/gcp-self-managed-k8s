@@ -18,9 +18,6 @@ The vanilla implementation creates a standard Kubernetes cluster with external I
 cd tf/vanilla 
 terraform init
 
-# Set your project and billing info
-export GCP_PROJECT=$(echo var.gcp_project | terraform console | tr -d '"')
-
 # Deploy the infrastructure
 terraform plan
 terraform apply
@@ -55,14 +52,12 @@ The `ipv6-only` implementation uses GCE's `IPV6_ONLY` stack type. This requires 
 ### Deployment
 
 ```bash
-
-# From the project root directory
 cd tf/ipv6-only
 terraform init
 terraform apply
 
-# Capture the IPv6 address 
-export CP_IPV6=$(terraform show -json | jq -r '.values.root_module.resources[] | select(.address=="google_compute_instance.cp_node") | .values.network_interface[0].ipv6_access_config[0].external_ipv6')
+# Capture the IPv6 address
+export CP_IPV6=$(terraform output -raw control_plane_public_ipv6)
 
 # Download config (Note: your local machine must have IPv6 access)
 export KUBECONFIG=.tmp/kubeconfig.yaml
