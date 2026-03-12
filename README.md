@@ -1,10 +1,16 @@
 # GCP Kubeadm Terraform
 
-This project automates the creation of a Kubernetes cluster on Google Compute Engine (GCE) using `kubeadm` and Cilium (eBPF). 
+This project automates the creation of a Kubernetes cluster on Google
+Compute Engine (GCE) using `kubeadm` and Cilium (eBPF). It was
+intended just to explore problem space -- anyone iterested in
+Kubernetes on GCP is _HIGHLY_ recommended to use the Google Kubernetes
+Engine ([GKE](https://cloud.google.com/kubernetes-engine)) instead of
+rolling their own.
 
-It provides two implementation examples:
-1. **Vanilla:** A standard dual-stack (IPv4/IPv6) cluster.
-2. **IPv6-Only:** A pure IPv6 cluster leveraging GCE's native IPv6-only subnets.
+With that caveat, this project provides two implementation examples:
+
+* **Vanilla:** A standard dual-stack (IPv4/IPv6) cluster.
+* **IPv6-Only:** A pure IPv6 cluster leveraging GCE's native IPv6-only subnets.
 
 ---
 
@@ -61,7 +67,7 @@ export CP_IPV6=$(terraform output -raw control_plane_public_ipv6)
 
 # Download config (Note: your local machine must have IPv6 access)
 export KUBECONFIG=.tmp/kubeconfig.yaml
-scp -i .tmp/vm_key admin@[${CP_IPV6}]:/etc/kubernetes/admin.conf ${KUBECONFIG}
+ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IPV6} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
 # Verify access
 kubectl get nodes -o wide
