@@ -33,11 +33,12 @@ variable "k8s_subnet_cidr" {
   description = "The CIDR range for the Kubernetes subnet."
 }
 
-locals {
-  zone        = "${var.region}-a"
-  rand_suffix = random_id.rand.hex
-}
 
 resource "random_id" "rand" {
   byte_length = 4
+}
+
+locals {
+  zone        = "${var.region}-a"
+  rand_suffix = random_id.rand.hex
 }
