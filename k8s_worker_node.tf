@@ -1,3 +1,4 @@
+
 resource "google_compute_instance" "worker_node" {
   name           = "node-${local.rand_suffix}"
   project        = var.gcp_project
@@ -32,6 +33,7 @@ resource "google_compute_instance" "worker_node" {
   metadata_startup_script = templatefile("${path.module}/scripts/bootstrap.sh.tftpl", {
     k8s_version      = var.k8s_version
     k8s_subnet_cidr  = var.k8s_subnet_cidr
+    cp_public_ip     = google_compute_address.cp_static_ip.address
     is_control_plane = false
     join_command     = trimspace(ssh_resource.get_join_command.result)
   })
@@ -39,3 +41,4 @@ resource "google_compute_instance" "worker_node" {
   # Explicitly depend on services being ready and the join command being available
   depends_on = [time_sleep.wait_for_services, ssh_resource.get_join_command]
 }
+

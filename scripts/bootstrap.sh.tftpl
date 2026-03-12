@@ -52,7 +52,14 @@ apt-mark hold kubelet kubeadm kubectl
 if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Bootstrapping Kubernetes control plane..."
   
-  kubeadm init --pod-network-cidr=192.168.0.0/16 
+  # Fetch internal IP via metadata for robust advertisement
+  INTERNAL_IP=$(curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+  
+  # Initialize with internal advertisement AND external SAN for kubectl access
+  kubeadm init \
+    --pod-network-cidr=192.168.0.0/16 \
+    --apiserver-advertise-address=$INTERNAL_IP \
+    --apiserver-cert-extra-sans=${cp_public_ip}
 
   export KUBECONFIG=/etc/kubernetes/admin.conf
   mkdir -p /root/.kube

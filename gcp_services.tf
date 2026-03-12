@@ -8,8 +8,8 @@ resource "google_project_service" "services" {
   disable_on_destroy = false
 }
 
-# Wait 30 seconds for the Compute API to fully propagate
+# Wait for the Compute API to fully propagate
 resource "time_sleep" "wait_for_services" {
   depends_on      = [google_project_service.services]
-  create_duration = "30s"
+  create_duration = "45s"
 }

@@ -2,10 +2,10 @@
 resource "google_compute_network" "k8s" {
   name                    = "k8s-network-${local.rand_suffix}"
   project                 = var.gcp_project
-  auto_create_subnetworks = false 
+  auto_create_subnetworks = false
   routing_mode            = "REGIONAL"
 
-  depends_on = [ time_sleep.wait_for_services ]
+  depends_on = [time_sleep.wait_for_services]
 }
 
 resource "google_compute_subnetwork" "k8s_subnet" {
@@ -16,7 +16,12 @@ resource "google_compute_subnetwork" "k8s_subnet" {
   ip_cidr_range = var.k8s_subnet_cidr
 }
 
-# 1. Allow ALL internal traffic within the subnet CIDR (all ports/protocols)
+resource "google_compute_address" "cp_static_ip" {
+  name   = "cp-static-ip-${local.rand_suffix}"
+  region = var.region
+}
+
+# Allow ALL internal traffic within the subnet CIDR (all ports/protocols)
 resource "google_compute_firewall" "allow_internal_all" {
   name      = "allow-internal-all-${local.rand_suffix}"
   project   = var.gcp_project
@@ -32,7 +37,7 @@ resource "google_compute_firewall" "allow_internal_all" {
 }
 
 
-# 2. Allow SSH and K8s API access from anywhere (for management)
+# Allow SSH and K8s API access from anywhere (for management)
 resource "google_compute_firewall" "allow_management" {
   name    = "allow-management-${local.rand_suffix}"
   project = var.gcp_project

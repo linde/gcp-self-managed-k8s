@@ -1,4 +1,4 @@
-# 3. Create the Compute Engine Instance
+# Create the Compute Engine Instance
 resource "google_compute_instance" "cp_node" {
   name           = "cp-${local.rand_suffix}"
   project        = var.gcp_project
@@ -22,7 +22,9 @@ resource "google_compute_instance" "cp_node" {
   network_interface {
     network    = google_compute_network.k8s.id
     subnetwork = google_compute_subnetwork.k8s_subnet.id
-    access_config {} // Ephemeral public IP
+    access_config {
+      nat_ip = google_compute_address.cp_static_ip.address
+    }
   }
 
   # Injects the public key we generated into the VM
@@ -34,6 +36,7 @@ resource "google_compute_instance" "cp_node" {
   metadata_startup_script = templatefile("${path.module}/scripts/bootstrap.sh.tftpl", {
     k8s_version      = var.k8s_version
     k8s_subnet_cidr  = var.k8s_subnet_cidr
+    cp_public_ip     = google_compute_address.cp_static_ip.address
     is_control_plane = true
     join_command     = "" # Not needed for control plane
   })
@@ -43,9 +46,9 @@ resource "google_compute_instance" "cp_node" {
 
 }
 
-# 4. Use the SSH provider to fetch the join command from the VM
+# Use the SSH provider to fetch the join command from the VM
 resource "ssh_resource" "get_join_command" {
-  host        = google_compute_instance.cp_node.network_interface[0].access_config[0].nat_ip
+  host        = google_compute_address.cp_static_ip.address
   user        = "admin"
   private_key = tls_private_key.vm_ssh_key.private_key_openssh
 
