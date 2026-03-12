@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# 1. Connectivity Prep (DNS64 for IPv4 Internet Access)
+# In IPv6-only mode, we MUST have this to reach the IPv4 internet via NAT64.
+# We overwrite it aggressively.
+cat <<EOF > /etc/resolv.conf
+nameserver 2001:4860:4860::6464
+nameserver 2001:4860:4860::64
+EOF
+
+echo ">>> Waiting for NAT64 internet connectivity (IPv6-only)..."
+for i in {1..20}; do
+  if curl -6 -s --connect-timeout 5 https://www.google.com > /dev/null; then
+    echo ">>> Connectivity OK!"
+    break
+  fi
+  echo "Attempt $i: Still no internet access. Check Cloud NAT/Router..."
+  sleep 5
+done
+
+# 2. Kernel and System Prep
+modprobe overlay
+modprobe br_netfilter
+
+swapoff -a
+sed -i '/swap/s/^/#/' /etc/fstab
+
+cat <<EOF > /etc/modules-load.d/containerd.conf
+overlay
+br_netfilter
+EOF
+
+cat <<EOF > /etc/sysctl.d/99-kubernetes-cri.conf
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv6.conf.all.forwarding        = 1
+EOF
+
+sysctl --system
+
+# 3. Block gcloud updates
+apt-mark hold google-cloud-*
+
+# 4. Install Containerd & Dependencies
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+DEBIAN_FRONTEND=noninteractive apt-get install -y gpg containerd containernetworking-plugins
+
+# 5. Configure Containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+sed -i 's-bin_dir = "/usr/lib/cni"-bin_dir = "/opt/cni/bin"-' /etc/containerd/config.toml
+
+systemctl restart containerd
+systemctl enable containerd
+
+# 6. Install Kubernetes Components (v${k8s_version})
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${k8s_version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+# 7. Node-specific initialization
+%{ if is_control_plane }
+if [ ! -f /etc/kubernetes/admin.conf ]; then
+  echo ">>> Bootstrapping IPv6 Kubernetes control plane..."
+  
+  # Discover IPs via OS-level commands (Global IPv6)
+  INTERFACE=$(ip -6 route show default | awk '{print $5}' | head -n1)
+  
+  # Wait for IPv6 addresses to be fully assigned by GCP
+  sleep 15
+
+  # In this GCE configuration, the primary global IPv6 is used for both internal and external communication.
+  IPV6_ADDR=$(ip -6 addr show dev $INTERFACE | grep 'scope global' | awk '{print $2}' | cut -d/ -f1 | head -n1)
+
+  echo "Discovered IPv6 Address: $IPV6_ADDR"
+
+  # Initialize with IPv6 CIDRs
+  kubeadm init \
+    --pod-network-cidr=${k8s_pod_cidr_ipv6} \
+    --service-cidr=${k8s_service_cidr_ipv6} \
+    --apiserver-advertise-address="$IPV6_ADDR" \
+    --apiserver-cert-extra-sans="$IPV6_ADDR"
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+  mkdir -p /root/.kube
+  cp -i /etc/kubernetes/admin.conf /root/.kube/config
+
+  # 8. Install Helm (Standalone Binary)
+  echo ">>> Installing Helm..."
+  curl -L https://get.helm.sh/helm-v3.17.1-linux-amd64.tar.gz | tar xz
+  mv linux-amd64/helm /usr/local/bin/helm
+  rm -rf linux-amd64
+
+  # 9. Install Cilium via Helm
+  echo ">>> Installing Cilium via Helm..."
+  helm repo add cilium https://helm.cilium.io/
+  helm repo update
+  helm install cilium cilium/cilium --version 1.17.1 \
+    --namespace kube-system \
+    --set ipv4.enabled=false \
+    --set ipv6.enabled=true \
+    --set ipam.mode=kubernetes \
+    --set routingMode=native \
+    --set ipv6NativeRoutingCIDR=${k8s_pod_cidr_ipv6} \
+    --set k8s.requireIPv6PodCIDR=true \
+    --set endpointRoutes.enabled=true \
+    --set enableIPv6Masquerade=true \
+    --set gcp.enabled=true \
+    --set autoDirectNodeRoutes=true \
+    --set kubeProxyReplacement=true \
+    --set operator.replicas=1
+
+  echo ">>> IPv6 Kubernetes cluster initialized with Cilium!"
+else
+  echo ">>> Kubernetes is already initialized."
+fi
+%{ else }
+if [ ! -f /etc/kubernetes/kubelet.conf ]; then
+  echo ">>> Joining IPv6 Kubernetes cluster (with retries)..."
+  for i in {1..30}; do
+    if ${join_command}; then
+      echo ">>> Successfully joined the cluster!"
+      exit 0
+    fi
+    echo "Join failed (attempt $i/30), waiting 10 seconds..."
+    sleep 10
+  done
+  exit 1
+fi
+%{ endif }

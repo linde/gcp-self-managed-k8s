@@ -1,53 +1,83 @@
 # GCP Kubeadm Terraform
 
-This project automates the creation of a Kubernetes cluster on Google Compute Engine (GCE) using `kubeadm` and Cilium (eBPF).
+This project automates the creation of a Kubernetes cluster on Google Compute Engine (GCE) using `kubeadm` and Cilium (eBPF). 
 
-### What it does:
-- **Infrastructure:** Provisions a custom VPC, subnet, static public IP, and firewall rules.
-- **Control Plane:** Deploys a GCE instance, reserves a static IP, and initializes a Kubernetes control plane.
-- **Networking:** Deploys Cilium with GCP Native Routing for high performance.
-- **Worker Node:** Deploys a GCE instance and automatically joins it to the cluster via SSH-captured tokens.
-- **Bootstrap:** Uses an idiomatic `templatefile` approach for OS prep and Kubernetes installation.
+It provides two implementation examples:
+1. **Vanilla:** A standard dual-stack (IPv4/IPv6) cluster.
+2. **IPv6-Only:** A pure IPv6 cluster leveraging GCE's native IPv6-only subnets.
 
-### Getting Started
+---
 
-To see this work, start with the "vanilla" implementation:
+## 1. Getting Started (Vanilla)
+
+The vanilla implementation creates a standard Kubernetes cluster with external IPv4 access and internal networking managed by Cilium.
+
+### Deployment
 
 ```bash
-
 cd tf/vanilla 
 terraform init
 
-# Extract the project ID from your variables
-export GCP_PROJECT=$(echo var.gcp_project | terraform console | tr -d '"' )
-
-# Set your billing and folder info
-export GCP_BILLING_ACCOUNT=[billing account]
-export GCP_FOLDER=[folder]
-
-# Create and link the project
-gcloud projects create ${GCP_PROJECT} --folder=${GCP_FOLDER}
-gcloud billing projects link $GCP_PROJECT --billing-account ${GCP_BILLING_ACCOUNT} 
+# Set your project and billing info
+export GCP_PROJECT=$(echo var.gcp_project | terraform console | tr -d '"')
 
 # Deploy the infrastructure
 terraform plan
 terraform apply
 
-# Capture the Control Plane Static IP
-export CP_IP=$(echo google_compute_address.cp_static_ip.address | terraform console | tr -d '"')
-
-# Download the admin config
+# Capture the Control Plane IP and setup Kubeconfig
+export CP_IP=$(terraform output -raw control_plane_public_ip)
 export KUBECONFIG=.tmp/kubeconfig.yaml
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
-# Update the server URL safely to use the public IP
-kubectl config set-cluster kubernetes --server=https://${CP_IP}:6443
+# Verify the cluster
+kubectl get nodes -o wide
+```
 
-# Verify access from your local machine
-kubectl get nodes
-
-# then for example, deploy NGINX
+### See it in action
+Deploy a sample NGINX deployment to verify pod networking:
+```bash
 kubectl apply -f https://k8s.io/examples/controllers/nginx-deployment.yaml
+kubectl get pods -w
+```
 
-# profit!
+### Cleanup (Vanilla)
+```bash
+terraform destroy
+```
+
+---
+
+## 2. Moving to IPv6-Only
+
+The `ipv6-only` implementation uses GCE's `IPV6_ONLY` stack type. This requires a machine with IPv6 connectivity to access the API server externally.
+
+### Deployment
+
+```bash
+
+# From the project root directory
+cd tf/ipv6-only
+terraform init
+terraform apply
+
+# Capture the IPv6 address 
+export CP_IPV6=$(terraform show -json | jq -r '.values.root_module.resources[] | select(.address=="google_compute_instance.cp_node") | .values.network_interface[0].ipv6_access_config[0].external_ipv6')
+
+# Download config (Note: your local machine must have IPv6 access)
+export KUBECONFIG=.tmp/kubeconfig.yaml
+scp -i .tmp/vm_key admin@[${CP_IPV6}]:/etc/kubernetes/admin.conf ${KUBECONFIG}
+
+# Verify access
+kubectl get nodes -o wide
+```
+
+### Infrastructure Details
+- **Networking:** Uses `stack_type = "IPV6_ONLY"` and GCE Native Routing.
+- **NAT64:** Configured via Cloud NAT to allow the cluster to reach IPv4-only services (like GitHub or Docker Hub).
+- **Cilium:** Installed via Helm during bootstrap with `ipv6.enabled=true` and `ipv4.enabled=false`.
+
+### Cleanup (IPv6-Only)
+```bash
+terraform destroy
 ```
