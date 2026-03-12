@@ -11,10 +11,11 @@ This project automates the creation of a Kubernetes cluster on Google Compute En
 
 ### Getting Started
 
+To see this work, start with the "vanilla" implementation:
 
 ```bash
 
-cd tf 
+cd tf/vanilla 
 terraform init
 
 # Extract the project ID from your variables
