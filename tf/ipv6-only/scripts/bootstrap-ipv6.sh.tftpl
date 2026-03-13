@@ -1,22 +1,5 @@
 #!/bin/bash
 
-# 1. Connectivity Prep (DNS64 for IPv4 Internet Access)
-# In IPv6-only mode, we MUST have this to reach the IPv4 internet via NAT64.
-# We overwrite it aggressively.
-cat <<EOF > /etc/resolv.conf
-nameserver 2001:4860:4860::6464
-nameserver 2001:4860:4860::64
-EOF
-
-echo ">>> Waiting for NAT64 internet connectivity (IPv6-only)..."
-for i in {1..20}; do
-  if curl -6 -s --connect-timeout 5 https://www.google.com > /dev/null; then
-    echo ">>> Connectivity OK!"
-    break
-  fi
-  echo "Attempt $i: Still no internet access. Check Cloud NAT/Router..."
-  sleep 5
-done
 
 # 2. Kernel and System Prep
 modprobe overlay
@@ -69,16 +52,16 @@ apt-mark hold kubelet kubeadm kubectl
 if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Bootstrapping IPv6 Kubernetes control plane..."
   
-  # Discover IPs via OS-level commands (Global IPv6)
-  INTERFACE=$(ip -6 route show default | awk '{print $5}' | head -n1)
-  
-  # Wait for IPv6 addresses to be fully assigned by GCP
-  sleep 15
+  echo ">>> Waiting for OS to configure global IPv6 address..."
+  while true; do
+    IPV6_ADDR=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ipv6s)
+    if [ -n "$IPV6_ADDR" ]; then
+      break
+    fi
+    sleep 2
+  done
 
-  # In this GCE configuration, the primary global IPv6 is used for both internal and external communication.
-  IPV6_ADDR=$(ip -6 addr show dev $INTERFACE | grep 'scope global' | awk '{print $2}' | cut -d/ -f1 | head -n1)
-
-  echo "Discovered IPv6 Address: $IPV6_ADDR"
+  echo "Discovered IPv6 Address from Metadata Server: $IPV6_ADDR"
 
   # Initialize with IPv6 CIDRs
   kubeadm init \
@@ -101,22 +84,31 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Installing Cilium via Helm..."
   helm repo add cilium https://helm.cilium.io/
   helm repo update
-  helm install cilium cilium/cilium --version 1.17.1 \
+  helm upgrade --install cilium cilium/cilium --version 1.19.1 \
     --namespace kube-system \
     --set ipv4.enabled=false \
     --set ipv6.enabled=true \
     --set ipam.mode=kubernetes \
     --set routingMode=native \
-    --set ipv6NativeRoutingCIDR=${k8s_pod_cidr_ipv6} \
+    --set ipv6NativeRoutingCIDR="${k8s_pod_cidr_ipv6}" \
     --set k8s.requireIPv6PodCIDR=true \
     --set endpointRoutes.enabled=true \
     --set enableIPv6Masquerade=true \
     --set gcp.enabled=true \
     --set autoDirectNodeRoutes=true \
     --set kubeProxyReplacement=true \
+    --set k8sServiceHost="$IPV6_ADDR" \
+    --set k8sServicePort=6443 \
     --set operator.replicas=1
 
   echo ">>> IPv6 Kubernetes cluster initialized with Cilium!"
+  
+  # 10. Write the Join Command to Guest Attributes
+  # So that Terraform can natively read it without needing an IPv6 SSH connection.
+  echo ">>> Writing kubeadm join command to GCP Guest Attributes..."
+  JOIN_CMD=$(kubeadm token create --print-join-command)
+  curl -s -X PUT --data "$JOIN_CMD" -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/guest-attributes/kubeadm/join-command
+
 else
   echo ">>> Kubernetes is already initialized."
 fi
