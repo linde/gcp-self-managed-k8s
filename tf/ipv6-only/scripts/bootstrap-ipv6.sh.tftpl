@@ -151,7 +151,15 @@ else
 fi
 %{ else }
 if [ ! -f /etc/kubernetes/kubelet.conf ]; then
-  echo ">>> Joining IPv6 Kubernetes cluster (with retries)..."
+  echo ">>> Joining IPv6 Kubernetes cluster (with 90s stagger per node)..."
+  
+  # Stagger joins based on node index to ensure predictable PodCIDR assignment
+  # (Node 1 gets fd00:10:0:1::/64, Node 2 gets fd00:10:0:2::/64)
+  # 90 seconds gives plenty of time for earlier nodes to finish apt-get installs
+  STAGGER_TIME=$(( ${node_index} * 90 ))
+  echo ">>> Staggering join by $STAGGER_TIME seconds to prevent PodCIDR race conditions..."
+  sleep $STAGGER_TIME
+
   for i in {1..30}; do
     if ${join_command}; then
       echo ">>> Successfully joined the cluster!"

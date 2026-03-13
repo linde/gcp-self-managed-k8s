@@ -39,6 +39,12 @@ variable "k8s_pod_cidr_ipv6" {
   description = "The IPv6 CIDR range for Kubernetes pods."
 }
 
+variable "worker_node_count" {
+  type        = number
+  default     = 2
+  description = "The number of worker nodes to provision."
+}
+
 resource "random_id" "rand" {
   byte_length = 4
 }

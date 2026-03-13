@@ -84,9 +84,10 @@ resource "google_compute_route" "cp_pod_route" {
 
 # Route for Worker Node Pod IPs (For Native Routing)
 resource "google_compute_route" "worker_pod_route" {
-  name              = "k8s-pod-route-worker-${local.rand_suffix}"
-  dest_range        = "fd00:10:0:1::/64" # kubeadm's 2nd allocated subnet
+  count             = var.worker_node_count
+  name              = "k8s-pod-route-worker-${count.index + 1}-${local.rand_suffix}"
+  dest_range        = "fd00:10:0:${count.index + 1}::/64" # kubeadm's 2nd+ allocated subnet
   network           = google_compute_network.k8s.name
-  next_hop_instance = google_compute_instance.worker_node.id
+  next_hop_instance = google_compute_instance.worker_node[count.index].id
   priority          = 1000
 }

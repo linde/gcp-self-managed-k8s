@@ -40,6 +40,7 @@ resource "google_compute_instance" "cp_node" {
     k8s_service_cidr_ipv6 = var.k8s_service_cidr_ipv6
     k8s_pod_cidr_ipv6     = var.k8s_pod_cidr_ipv6
     is_control_plane     = true
+    node_index           = 0
     join_command         = ""
   })
 

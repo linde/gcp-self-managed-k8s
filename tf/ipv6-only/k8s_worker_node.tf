@@ -1,6 +1,7 @@
 
 resource "google_compute_instance" "worker_node" {
-  name         = "node-ipv6-${local.rand_suffix}"
+  count        = var.worker_node_count
+  name         = "node-ipv6-${count.index + 1}-${local.rand_suffix}"
   project      = var.gcp_project
   machine_type = var.machine_type
   zone         = local.zone
@@ -42,6 +43,7 @@ resource "google_compute_instance" "worker_node" {
     k8s_pod_cidr_ipv6      = var.k8s_pod_cidr_ipv6
     cp_public_ipv6        = "" // Not used by worker
     is_control_plane      = false
+    node_index            = count.index
     join_command          = trimspace(ssh_resource.get_join_command.result)
   })
 

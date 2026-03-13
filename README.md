@@ -74,9 +74,15 @@ kubectl get nodes -o wide
 ```
 
 ### Infrastructure Details
-- **Networking:** Uses `stack_type = "IPV6_ONLY"` and GCE Native Routing.
+
+This repository demonstrates how to solve several severe complexities when running **eBPF (Cilium)** in an **IPv6-Only** Google Cloud environment.
+
+- **Networking & Scaling (`worker_node_count`):** Uses `stack_type = "IPV6_ONLY"`. You can easily scale the cluster by overriding `worker_node_count` in your `terraform.tfvars`. We default to 2.
+- **GCP Native Routing:** Cilium requires knowing how to route Pod traffic across nodes. Instead of relying on VXLAN tunneling and its overhead, this project leverages **Native Routing**. Native Routing works by using Terraform `google_compute_route` resources to explicitly map Kubernetes PodCIDRs (`fd00:10:0:X::/64`) directly to the VM instances within the GCP VPC.
+- **Race Condition Staggering**: Kubernetes `kube-controller-manager` assigns PodCIDRs sequentially to nodes strictly based on the millisecond they join the cluster. Because package installation times (`apt-get`) vary, a naive `kubeadm join` will result in Terraform's static route map getting misaligned with the actual acquired PodCIDR. The `bootstrap-ipv6.sh.tftpl` resolves this naturally by calculating an absolute **90-second stagger** per node based on its index (`T+0` for CP, `T+90` for worker 1, `T+180` for worker 2), guaranteeing deterministic CIDR acquisition and seamless Native Routing. Improvements for this approach are welcome!
 - **NAT64:** Configured via Cloud NAT to allow the cluster to reach IPv4-only services (like GitHub or Docker Hub).
-- **Cilium:** Installed via Helm during bootstrap with `ipv6.enabled=true` and `ipv4.enabled=false`.
+- **Cilium:** Installed via Helm during bootstrap with `ipv6.enabled=true`, `ipv4.enabled=false`, and `routingMode=native`.
+- **CoreDNS Upstream**: A configmap patch forces CoreDNS to utilize Google's Public DNS64 endpoints (`2001:4860:4860::6464`) to restore external resolution to pods since the host `systemd-resolved` doesn't pass native IPv6 DNS effectively.
 
 ### Cleanup (IPv6-Only)
 ```bash
