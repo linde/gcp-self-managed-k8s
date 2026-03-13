@@ -82,3 +82,25 @@ kubectl get nodes -o wide
 ```bash
 terraform destroy
 ```
+
+
+### Debugging utilities
+
+```
+# use the following to try out networking tools within a pod on the cluster
+kubectl run -i --tty --rm debug-session --image=jonasal/network-tools --restart=Never -- /bin/bash
+
+# the within that pod
+dig google.com AAAA
+ping -6 google.com
+
+curl -6 http://google.com
+
+# one curveball, github who doesn't support ipv6
+dig github.com AAAA
+
+# these dont work
+ping -6 github.com
+curl -6 http://github.com
+
+```
