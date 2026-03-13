@@ -96,7 +96,7 @@ ping -6 google.com
 
 curl -6 http://google.com
 
-# one curveball, github who doesn't support ipv6
+# one curveball, github who doesn't support ipv6 but we can resolve with 6to4
 dig github.com AAAA
 
 # these dont work
