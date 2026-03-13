@@ -22,7 +22,7 @@ resource "google_compute_subnetwork" "k8s_subnet" {
   ipv6_access_type = "EXTERNAL"
 }
 
-# 1. Allow ALL internal IPv6 traffic within the subnet
+# Allow ALL internal IPv6 traffic within the subnet
 resource "google_compute_firewall" "allow_internal_ipv6_all" {
   name      = "allow-internal-ipv6-all-${local.rand_suffix}"
   project   = var.gcp_project
@@ -37,7 +37,7 @@ resource "google_compute_firewall" "allow_internal_ipv6_all" {
   source_ranges = ["::/0"] 
 }
 
-# 2. Allow SSH and K8s API access from anywhere (IPv6)
+# Allow SSH and K8s API access from anywhere (IPv6)
 resource "google_compute_firewall" "allow_management_ipv6" {
   name    = "allow-management-ipv6-${local.rand_suffix}"
   project = var.gcp_project
@@ -51,7 +51,7 @@ resource "google_compute_firewall" "allow_management_ipv6" {
   source_ranges = ["::/0"]
 }
 
-# 3. Cloud Router and NAT (NAT64)
+# Cloud Router and NAT (NAT64)
 # Required for IPv6-only instances to reach IPv4-only sites (GitHub, pkgs.k8s.io)
 resource "google_compute_router" "router" {
   name    = "k8s-router-ipv6-${local.rand_suffix}"
@@ -71,4 +71,22 @@ resource "google_compute_router_nat" "nat" {
 
   # NAT64 is enabled automatically by GCP when the subnet is IPv6-only
   # and the NAT is configured.
+}
+
+# Route for Control Plane Pod IPs (For Native Routing)
+resource "google_compute_route" "cp_pod_route" {
+  name              = "k8s-pod-route-cp-${local.rand_suffix}"
+  dest_range        = "fd00:10::/64" # kubeadm's 1st allocated subnet
+  network           = google_compute_network.k8s.name
+  next_hop_instance = google_compute_instance.cp_node.id
+  priority          = 1000
+}
+
+# Route for Worker Node Pod IPs (For Native Routing)
+resource "google_compute_route" "worker_pod_route" {
+  name              = "k8s-pod-route-worker-${local.rand_suffix}"
+  dest_range        = "fd00:10:0:1::/64" # kubeadm's 2nd allocated subnet
+  network           = google_compute_network.k8s.name
+  next_hop_instance = google_compute_instance.worker_node.id
+  priority          = 1000
 }
