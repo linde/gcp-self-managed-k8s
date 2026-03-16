@@ -66,10 +66,10 @@ terraform apply
 export CP_IPV6=$(terraform output -raw control_plane_public_ipv6)
 
 # Download config (Note: your local machine must have IPv6 access)
-export KUBECONFIG=.tmp/kubeconfig.yaml
+export KUBECONFIG=$(pwd)/.tmp/kubeconfig.yaml
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IPV6} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
-# Verify access
+# Verify access (after the nodes have had a chance to join)
 kubectl get nodes -o wide
 ```
 
@@ -110,3 +110,9 @@ ping -6 github.com
 curl -6 http://github.com
 
 ```
+
+### Automated Reachability Testing
+
+This project includes a built-in reachability testing suite to experiment with pod-to-pod networking (both IPv4 and IPv6) within a cluster. 
+
+Please see the [Reachability Testing Documentation](docs/examples/reachability-testing.md) for full instructions on how to use `kind` to mock this locally, deploy the workloads, read the test results, and understand the dual-stack logic.

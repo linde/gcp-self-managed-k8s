@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reachability-test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reachability-service
+  namespace: reachability-test
+spec:
+  clusterIP: None
+  selector:
+    app: reachability-agent
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: reachability-agent
+  namespace: reachability-test
+spec:
+  selector:
+    matchLabels:
+      app: reachability-agent
+  template:
+    metadata:
+      labels:
+        app: reachability-agent
+    spec:
+      containers:
+        - name: agent
+          image: python:3.11-alpine
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import socketserver
+              import os
+              import urllib.request
+              import urllib.parse
+              import json
+              
+              PORT = 8080
+              NODE_NAME = os.environ.get('NODE_NAME', 'unknown')
+              POD_IP = os.environ.get('POD_IP', 'unknown')
+              print(f"Starting agent on node {NODE_NAME} with IP {POD_IP}")
+              
+              class Handler(http.server.SimpleHTTPRequestHandler):
+                  def do_GET(self):
+                      parsed_path = urllib.parse.urlparse(self.path)
+                      query = urllib.parse.parse_qs(parsed_path.query)
+                      
+                      if 'targets' in query:
+                          raw_targets = query['targets'][0]
+                          targets = [t for t in raw_targets.split(',') if t]
+                          results = []
+                          for target in targets:
+                              url_target = f"[{target}]" if ':' in target and not target.startswith('[') else target
+                              url = f"http://{url_target}:{PORT}/"
+                              try:
+                                  req = urllib.request.Request(url)
+                                  with urllib.request.urlopen(req, timeout=5) as response:
+                                      res_data = json.loads(response.read().decode('utf-8'))
+                                      target_node = res_data.get('node', 'unknown')
+                                      target_ip = res_data.get('ip', 'unknown')
+                                      msg = f"pod on {NODE_NAME}@{POD_IP} called target: host @{target}, got: {{'node': '{target_node}', 'ip': '{target_ip}'}}"
+                                      print(msg)
+                                      results.append(msg)
+                              except Exception as e:
+                                  msg = f"pod on {NODE_NAME}@{POD_IP} called target: host @{target}, error: {str(e)}"
+                                  print(msg)
+                                  results.append(msg)
+                          
+                          self.send_response(200)
+                          self.send_header('Content-type', 'application/json')
+                          self.end_headers()
+                          self.wfile.write(json.dumps({"results": results}).encode())
+                      else:
+                          self.send_response(200)
+                          self.send_header('Content-type', 'application/json')
+                          self.end_headers()
+                          response_data = {"node": NODE_NAME, "ip": POD_IP}
+                          self.wfile.write(json.dumps(response_data).encode())
+
+              # Python's default HTTP server binds to AF_INET (IPv4).
+              # Forcing AF_INET6 allows the kernel to handle both natively (IPv4 maps to IPv6 space)
+              # preventing 'Connection Refused' for IPv6 traffic inside the container.
+              class DualStackServer(http.server.ThreadingHTTPServer):
+                  address_family = __import__('socket').AF_INET6
+                  
+              with DualStackServer(("", PORT), Handler) as httpd:
+                  print(f"Serving at port {PORT}")
+                  httpd.serve_forever()
+          ports:
+            - containerPort: 8080
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP

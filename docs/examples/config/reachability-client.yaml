@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reachability-client
+  namespace: reachability-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reachability-client
+  namespace: reachability-test
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reachability-client-pods
+  namespace: reachability-test
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reachability-client
+  namespace: reachability-test
+subjects:
+  - kind: ServiceAccount
+    name: reachability-client
+    namespace: reachability-test
+roleRef:
+  kind: Role
+  name: reachability-client
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reachability-client-pods
+  namespace: reachability-test
+subjects:
+  - kind: ServiceAccount
+    name: reachability-client
+    namespace: reachability-test
+roleRef:
+  kind: Role
+  name: reachability-client-pods
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reachability-client
+  namespace: reachability-test
+spec:
+  serviceAccountName: reachability-client
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: python:3.11-alpine
+      command:
+        - python3
+        - -c
+        - |
+          import os
+          import json
+          import urllib.request
+          import time
+          import ssl
+          
+          KUBE_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'
+          KUBE_CA_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+          API_URL = "https://kubernetes.default.svc"
+          
+          if not os.path.exists(KUBE_TOKEN_PATH):
+              print("Service account token not found.")
+              exit(1)
+              
+          with open(KUBE_TOKEN_PATH) as f:
+              KUBE_TOKEN = f.read().strip()
+              
+          headers = {"Authorization": f"Bearer {KUBE_TOKEN}"}
+          ctx = ssl.create_default_context(cafile=KUBE_CA_PATH)
+          
+          # Get daemonset pods to find out the expected targets
+          req = urllib.request.Request(f"{API_URL}/api/v1/namespaces/reachability-test/pods?labelSelector=app=reachability-agent", headers=headers)
+          
+          ips = []
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen(req, context=ctx) as response:
+                      pods = json.loads(response.read().decode())
+                      ips = []
+                      for pod in pods.get('items', []):
+                          if pod.get('status', {}).get('phase') == 'Running':
+                              pod_ip = pod['status'].get('podIP')
+                              pod_name = pod['metadata'].get('name', 'unknown-pod')
+                              node_name = pod['spec'].get('nodeName', 'unknown-node')
+                              if pod_ip:
+                                  ips.append(pod_ip)
+                                  print(f"Discovered Agent Pod: {pod_name} on node {node_name} with IP: {pod_ip}")
+              except Exception as e:
+                  print(f"Error fetching pods: {e}")
+              
+              # we just aim to find at least 1, though realistically there will be more
+              # waiting for them all to report IP addresses
+              expected_count = len(pods.get('items', []))
+              if len(ips) > 0 and len(ips) == expected_count:
+                  print(f"Goal met: Found {len(ips)} ready agent pods. IP list: {ips}")
+                  break
+              else:
+                  print(f"Waiting for agent pods to become ready (found IPs for {len(ips)} / {expected_count})...")
+                  time.sleep(2)
+                  
+          if len(ips) == 0:
+              print(f"Error: Did not find any ready reachability-agent pods.")
+              exit(1)
+          
+          target_list = ",".join(ips)
+          print(f"\nFinal target list to test against: {target_list}")
+          
+          # Call each endpoint sequentially
+          for ip in ips:
+              url_ip = f"[{ip}]" if ":" in ip else ip
+              url = f"http://{url_ip}:8080/?targets={target_list}"
+              print(f"\n--- Initiating tests from endpoint {ip} ---")
+              print(f"Hitting driver URL: {url}")
+              try:
+                  req = urllib.request.Request(url)
+                  with urllib.request.urlopen(req) as response:
+                      res = json.loads(response.read().decode())
+                      for msg in res.get('results', []):
+                          print(msg)
+              except Exception as e:
+                  print(f"Failed to call {ip} driver: {e}")
+                  
+          print("\nReachability test finished.")
