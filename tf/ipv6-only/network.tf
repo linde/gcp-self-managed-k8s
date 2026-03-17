@@ -34,7 +34,10 @@ resource "google_compute_firewall" "allow_internal_ipv6_all" {
     protocol = "all"
   }
 
-  source_ranges = ["::/0"] 
+  source_ranges = [
+    google_compute_subnetwork.k8s_subnet.external_ipv6_prefix,
+    google_compute_subnetwork.k8s_subnet.ipv6_cidr_range
+  ]
 }
 
 # Allow SSH and K8s API access from anywhere (IPv6)
