@@ -18,6 +18,9 @@ With that caveat, this project provides two implementation examples:
 
 The vanilla implementation creates a standard Kubernetes cluster with external IPv4 access and internal networking managed by Cilium.
 
+### Configuration
+You can easily scale the vanilla cluster by overriding `worker_node_count` in your `terraform.tfvars`. We default to 2 worker nodes. The maximum supported number of worker nodes is 253, as kubeadm allocates a `/24` (254 addresses) per node from the `192.168.0.0/16` cluster CIDR.
+
 ### Deployment
 
 ```bash
@@ -30,7 +33,7 @@ terraform apply
 
 # Capture the Control Plane IP and setup Kubeconfig
 export CP_IP=$(terraform output -raw control_plane_public_ip)
-export KUBECONFIG=.tmp/kubeconfig.yaml
+export KUBECONFIG=$(pwd)/.tmp/kubeconfig.yaml
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
 # Verify the cluster

@@ -50,3 +50,22 @@ resource "google_compute_firewall" "allow_management" {
 
   source_ranges = ["0.0.0.0/0"]
 }
+
+# Route for Control Plane Pod IPs (For Native Routing)
+resource "google_compute_route" "cp_pod_route" {
+  name              = "k8s-pod-route-cp-${local.rand_suffix}"
+  dest_range        = "192.168.0.0/24" # kubeadm's 1st allocated subnet natively starting at .0.0
+  network           = google_compute_network.k8s.name
+  next_hop_instance = google_compute_instance.cp_node.id
+  priority          = 1000
+}
+
+# Route for Worker Node Pod IPs (For Native Routing)
+resource "google_compute_route" "worker_pod_route" {
+  count             = var.worker_node_count
+  name              = "k8s-pod-route-worker-${count.index + 1}-${local.rand_suffix}"
+  dest_range        = "192.168.${count.index + 1}.0/24" # kubeadm's 2nd+ allocated subnet (192.168.1.x, 192.168.2.x)
+  network           = google_compute_network.k8s.name
+  next_hop_instance = google_compute_instance.worker_node[count.index].id
+  priority          = 1000
+}

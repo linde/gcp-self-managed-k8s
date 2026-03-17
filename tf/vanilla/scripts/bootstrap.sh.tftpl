@@ -61,6 +61,9 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
     --apiserver-advertise-address=$INTERNAL_IP \
     --apiserver-cert-extra-sans=${cp_public_ip}
 
+  # Replace the internal IP with the external IP in the config so external kubectl works out of the box
+  sed -i "s/server: https:\/\/$INTERNAL_IP:6443/server: https:\/\/${cp_public_ip}:6443/g" /etc/kubernetes/admin.conf
+
   export KUBECONFIG=/etc/kubernetes/admin.conf
   mkdir -p /root/.kube
   cp -i /etc/kubernetes/admin.conf /root/.kube/config

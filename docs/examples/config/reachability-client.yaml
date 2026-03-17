@@ -63,6 +63,9 @@ spec:
   containers:
     - name: client
       image: python:3.11-alpine
+      env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
       command:
         - python3
         - -c
@@ -91,6 +94,7 @@ spec:
           req = urllib.request.Request(f"{API_URL}/api/v1/namespaces/reachability-test/pods?labelSelector=app=reachability-agent", headers=headers)
           
           ips = []
+          pods = {}
           for _ in range(30):
               try:
                   with urllib.request.urlopen(req, context=ctx) as response:

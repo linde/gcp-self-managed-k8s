@@ -1,6 +1,7 @@
 
 resource "google_compute_instance" "worker_node" {
-  name           = "node-${local.rand_suffix}"
+  count          = var.worker_node_count
+  name           = "node-${count.index + 1}-${local.rand_suffix}"
   project        = var.gcp_project
   machine_type   = var.machine_type
   zone           = local.zone

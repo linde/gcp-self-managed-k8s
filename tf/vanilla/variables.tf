@@ -42,3 +42,14 @@ locals {
   zone        = "${var.region}-a"
   rand_suffix = random_id.rand.hex
 }
+
+variable "worker_node_count" {
+  type        = number
+  default     = 2
+  description = "The number of worker nodes to provision."
+
+  validation {
+    condition     = var.worker_node_count >= 1 && var.worker_node_count <= 253
+    error_message = "worker_node_count must be between 1 and 253 because kubeadm natively allocates a /24 (254 addresses) per node, and we are using a 192.168.0.0/16 cluster CIDR."
+  }
+}
