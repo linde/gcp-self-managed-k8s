@@ -1,6 +1,5 @@
 # Google Cloud Controller Manager (CCM) Implementation Plan
 
-
 > *STATUS*: implemented!
 
 This document outlines the steps to resolve the static routing / race-condition issues in the IPv6 implementation by deploying the external Google Cloud Controller Manager (CCM). By delegating route management to the CCM, we can completely remove the fragile 90-second stagger hack and static Terraform routes.

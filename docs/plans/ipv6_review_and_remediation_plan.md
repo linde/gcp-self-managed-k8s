@@ -1,5 +1,7 @@
 # IPv6 Implementation Review 
 
+> *STATUS*: implemented!
+
 Here is a list of issues and non-idiomatic practices found in the IPv6 implementation, with details on why they are problematic and how they should be properly handled for GCP and Kubernetes.
 
 ## 1. Static PodCIDR Routing & The "90-Second Stagger" Hack

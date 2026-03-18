@@ -1,5 +1,8 @@
 # Plan: Wait for Kubeconfig Readiness
 
+> *STATUS*: pending
+
+
 ## Goal
 To prevent users from fetching `/etc/kubernetes/admin.conf` before `kubeadm init` completes and the control plane public IP is fully plumbed through via the startup script, we will add a Terraform `null_resource` that waits for the Kubernetes API server to become ready on port `6443` over the public IP before `terraform apply` completes.
 
