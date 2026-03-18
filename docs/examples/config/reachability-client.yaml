@@ -78,7 +78,9 @@ spec:
           
           KUBE_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token'
           KUBE_CA_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
-          API_URL = "https://kubernetes.default.svc"
+          host = os.environ.get('KUBERNETES_SERVICE_HOST', 'kubernetes.default.svc')
+          port = os.environ.get('KUBERNETES_SERVICE_PORT', '443')
+          API_URL = f"https://[{host}]:{port}" if ":" in host else f"https://{host}:{port}"
           
           if not os.path.exists(KUBE_TOKEN_PATH):
               print("Service account token not found.")
