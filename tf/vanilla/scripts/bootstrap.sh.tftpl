@@ -48,6 +48,9 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl
 
 # 6. Node-specific initialization
+
+echo ">>> Configuring Kubelet for external Cloud Provider..."
+echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
 %{ if is_control_plane }
 if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Bootstrapping Kubernetes control plane..."
@@ -59,7 +62,9 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
   kubeadm init \
     --pod-network-cidr=192.168.0.0/16 \
     --apiserver-advertise-address=$INTERNAL_IP \
-    --apiserver-cert-extra-sans=${cp_public_ip}
+    --apiserver-cert-extra-sans=${cp_public_ip} \
+    --node-name=$(hostname) \
+    --token="${kubeadm_token}"
 
   # Replace the internal IP with the external IP in the config so external kubectl works out of the box
   sed -i "s/server: https:\/\/$INTERNAL_IP:6443/server: https:\/\/${cp_public_ip}:6443/g" /etc/kubernetes/admin.conf
@@ -88,14 +93,77 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
     --set autoDirectNodeRoutes=true
 
   echo ">>> Kubernetes cluster initialized with Cilium (GCP Optimized)!"
-else
+
+  echo ">>> Deploying Google Cloud Controller Manager..."
+  cat <<'EOF' > /tmp/ccm.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    k8s-app: cloud-controller-manager
+  name: cloud-controller-manager
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      k8s-app: cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        k8s-app: cloud-controller-manager
+    spec:
+      serviceAccountName: cloud-controller-manager
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - key: "node.cloudprovider.kubernetes.io/uninitialized"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "node-role.kubernetes.io/control-plane"
+        effect: "NoSchedule"
+      containers:
+      - name: cloud-controller-manager
+        image: registry.k8s.io/cloud-provider-gcp/cloud-controller-manager:v32.2.5
+        command:
+        - /cloud-controller-manager
+        args:
+        - --v=2
+        - --cloud-provider=gce
+        - --use-service-account-credentials=true
+        - --configure-cloud-routes=true
+        - --allocate-node-cidrs=true
+        - --cluster-cidr=192.168.0.0/16
+        - --leader-elect=true
+EOF
+
+  kubectl apply -f /tmp/ccm.yaml
   echo ">>> Kubernetes is already initialized. Skipping kubeadm init."
 fi
 %{ else }
 if [ ! -f /etc/kubernetes/kubelet.conf ]; then
   echo ">>> Joining Kubernetes cluster (with retries)..."
   for i in {1..30}; do
-    if ${join_command}; then
+    if kubeadm join ${cp_internal_ip}:6443 --token ${kubeadm_token} --discovery-token-unsafe-skip-ca-verification --node-name=$(hostname); then
       echo ">>> Successfully joined the cluster!"
       exit 0
     fi

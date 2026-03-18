@@ -9,6 +9,7 @@ resource "google_compute_instance" "worker_node" {
   tags           = ["k8s-node"]
 
   service_account {
+    email  = google_service_account.k8s_node.email
     scopes = ["cloud-platform"]
   }
 
@@ -36,10 +37,11 @@ resource "google_compute_instance" "worker_node" {
     k8s_subnet_cidr  = var.k8s_subnet_cidr
     cp_public_ip     = google_compute_address.cp_static_ip.address
     is_control_plane = false
-    join_command     = trimspace(ssh_resource.get_join_command.result)
+    kubeadm_token    = local.kubeadm_token
+    cp_internal_ip   = google_compute_instance.cp_node.network_interface[0].network_ip
   })
 
   # Explicitly depend on services being ready and the join command being available
-  depends_on = [time_sleep.wait_for_services, ssh_resource.get_join_command]
+  depends_on = [time_sleep.wait_for_services, google_compute_instance.cp_node]
 }
 

@@ -8,6 +8,7 @@ resource "google_compute_instance" "cp_node" {
   tags           = ["k8s-node"]
 
   service_account {
+    email  = google_service_account.k8s_node.email
     scopes = ["cloud-platform"]
   }
 
@@ -38,7 +39,8 @@ resource "google_compute_instance" "cp_node" {
     k8s_subnet_cidr  = var.k8s_subnet_cidr
     cp_public_ip     = google_compute_address.cp_static_ip.address
     is_control_plane = true
-    join_command     = "" # Not needed for control plane
+    kubeadm_token    = local.kubeadm_token
+    cp_internal_ip   = ""
   })
 
   # Ensure services are ready and propagated
@@ -46,20 +48,19 @@ resource "google_compute_instance" "cp_node" {
 
 }
 
-# Use the SSH provider to fetch the join command from the VM
-resource "ssh_resource" "get_join_command" {
-  host        = google_compute_address.cp_static_ip.address
-  user        = "admin"
-  private_key = tls_private_key.vm_ssh_key.private_key_openssh
+# Kubeadm Token Generation
+resource "random_string" "token_id" {
+  length  = 6
+  special = false
+  upper   = false
+}
 
-  # Set a connection and command execution timeout (10 minutes)
-  timeout = "10m"
+resource "random_string" "token_secret" {
+  length  = 16
+  special = false
+  upper   = false
+}
 
-  commands = [
-    # Poll until the admin.conf exists, ensuring kubeadm init is done
-    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 3; done",
-    "sudo kubeadm token create --print-join-command"
-  ]
-
-  depends_on = [google_compute_instance.cp_node]
+locals {
+  kubeadm_token = "${random_string.token_id.result}.${random_string.token_secret.result}"
 }

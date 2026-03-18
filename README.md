@@ -34,7 +34,13 @@ terraform apply
 # Capture the Control Plane IP and setup Kubeconfig
 export CP_IP=$(terraform output -raw control_plane_public_ip)
 export KUBECONFIG=$(pwd)/.tmp/kubeconfig.yaml
+
+# this might take a minute, tf comes back when the machine is up, but the scripts might take longer ...
+# repeat if you get: `cat: /etc/kubernetes/admin.conf: No such file or directory`
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
+
+# watch as the pods come up
+watch kubectl get pods -A -o wide
 
 # Verify the cluster
 kubectl get nodes -o wide
@@ -69,10 +75,14 @@ terraform apply
 export CP_IPV6=$(terraform output -raw control_plane_public_ipv6)
 
 # Download config (Note: your local machine must have IPv6 access)
-export KUBECONFIG=$(pwd)/.tmp/kubeconfig.yaml
-ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IPV6} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
+# this might take a minute, tf comes back when the machine is up, but the scripts might take longer ...
+# repeat if you get: `cat: /etc/kubernetes/admin.conf: No such file or directory`
+ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
-# Verify access (after the nodes have had a chance to join)
+# watch as the pods come up
+watch kubectl get pods -A -o wide
+
+# Verify the cluster
 kubectl get nodes -o wide
 ```
 
