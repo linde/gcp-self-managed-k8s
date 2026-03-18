@@ -115,6 +115,16 @@ subjects:
   name: cloud-controller-manager
   namespace: kube-system
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-config
+  namespace: kube-system
+data:
+  gce.conf: |
+    [Global]
+    node-tags = k8s-node
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -154,6 +164,16 @@ spec:
         - --allocate-node-cidrs=true
         - --cluster-cidr=192.168.0.0/16
         - --leader-elect=true
+        - --cloud-config=/etc/gce.conf
+        volumeMounts:
+        - name: cloud-config
+          mountPath: /etc/gce.conf
+          subPath: gce.conf
+          readOnly: true
+      volumes:
+      - name: cloud-config
+        configMap:
+          name: cloud-config
 EOF
 
   kubectl apply -f /tmp/ccm.yaml

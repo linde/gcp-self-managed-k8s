@@ -8,6 +8,7 @@ resource "google_compute_instance" "worker_node" {
 
   # IPv6-only stack
   can_ip_forward = true
+  tags           = ["k8s-node"]
 
   boot_disk {
     initialize_params {

@@ -135,6 +135,16 @@ subjects:
   name: cloud-controller-manager
   namespace: kube-system
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-config
+  namespace: kube-system
+data:
+  gce.conf: |
+    [Global]
+    node-tags = k8s-node
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -173,6 +183,16 @@ spec:
         - --cluster-cidr=${k8s_pod_cidr_ipv6}
         - --use-service-account-credentials=true
         - --leader-elect=true
+        - --cloud-config=/etc/gce.conf
+        volumeMounts:
+        - name: cloud-config
+          mountPath: /etc/gce.conf
+          subPath: gce.conf
+          readOnly: true
+      volumes:
+      - name: cloud-config
+        configMap:
+          name: cloud-config
 EOF
 
 

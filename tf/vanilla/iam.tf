@@ -14,3 +14,9 @@ resource "google_project_iam_member" "compute_viewer" {
   role    = "roles/compute.viewer"
   member  = "serviceAccount:${google_service_account.k8s_node.email}"
 }
+
+resource "google_project_iam_member" "security_admin" {
+  project = var.gcp_project
+  role    = "roles/compute.securityAdmin"
+  member  = "serviceAccount:${google_service_account.k8s_node.email}"
+}
