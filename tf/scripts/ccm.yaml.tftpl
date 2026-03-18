@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-config
+  namespace: kube-system
+data:
+  gce.conf: |
+    [Global]
+    node-tags = k8s-node
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    k8s-app: cloud-controller-manager
+  name: cloud-controller-manager
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      k8s-app: cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        k8s-app: cloud-controller-manager
+    spec:
+      serviceAccountName: cloud-controller-manager
+      hostNetwork: true
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - operator: "Exists"
+      containers:
+      - name: cloud-controller-manager
+        image: registry.k8s.io/cloud-provider-gcp/cloud-controller-manager:v32.2.5
+        command:
+        - /cloud-controller-manager
+        args:
+        - --v=2
+        - --cloud-provider=gce
+        - --configure-cloud-routes=true
+        - --allocate-node-cidrs=true
+        - --cluster-cidr=${cluster_cidr}
+        - --use-service-account-credentials=true
+        - --leader-elect=true
+        - --cloud-config=/etc/gce.conf
+        volumeMounts:
+        - name: cloud-config
+          mountPath: /etc/gce.conf
+          subPath: gce.conf
+          readOnly: true
+      volumes:
+      - name: cloud-config
+        configMap:
+          name: cloud-config

@@ -37,14 +37,18 @@ resource "google_compute_instance" "cp_node" {
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   }
 
-  metadata_startup_script = templatefile("${path.module}/scripts/bootstrap-ipv6.sh.tftpl", {
-    k8s_version          = var.k8s_version
-    k8s_service_cidr_ipv6 = var.k8s_service_cidr_ipv6
-    k8s_pod_cidr_ipv6     = var.k8s_pod_cidr_ipv6
-    is_control_plane     = true
-    node_index           = 0
-    kubeadm_token        = local.kubeadm_token
-    cp_public_ipv6       = ""
+  metadata_startup_script = templatefile("${path.module}/../scripts/bootstrap.sh.tftpl", {
+    k8s_version       = var.k8s_version
+    k8s_service_cidr  = var.k8s_service_cidr_ipv6
+    k8s_pod_cidr      = var.k8s_pod_cidr_ipv6
+    cp_public_ip      = ""
+    cp_join_ip        = ""
+    is_control_plane  = true
+    ipv6_enabled      = true
+    kubeadm_token     = local.kubeadm_token
+    ccm_yaml          = templatefile("${path.module}/../scripts/ccm.yaml.tftpl", {
+      cluster_cidr = var.k8s_pod_cidr_ipv6
+    })
   })
 
   depends_on = [time_sleep.wait_for_services]

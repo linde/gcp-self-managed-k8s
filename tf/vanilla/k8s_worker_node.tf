@@ -32,13 +32,16 @@ resource "google_compute_instance" "worker_node" {
   }
 
   # Use templatefile with the join command captured via SSH
-  metadata_startup_script = templatefile("${path.module}/scripts/bootstrap.sh.tftpl", {
+  metadata_startup_script = templatefile("${path.module}/../scripts/bootstrap.sh.tftpl", {
     k8s_version      = var.k8s_version
-    k8s_subnet_cidr  = var.k8s_subnet_cidr
+    k8s_service_cidr = ""
+    k8s_pod_cidr     = "192.168.0.0/16"
     cp_public_ip     = google_compute_address.cp_static_ip.address
+    cp_join_ip       = google_compute_instance.cp_node.network_interface[0].network_ip
     is_control_plane = false
+    ipv6_enabled     = false
     kubeadm_token    = local.kubeadm_token
-    cp_internal_ip   = google_compute_instance.cp_node.network_interface[0].network_ip
+    ccm_yaml         = ""
   })
 
   # Explicitly depend on services being ready and the join command being available

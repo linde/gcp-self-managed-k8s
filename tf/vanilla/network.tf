@@ -19,6 +19,8 @@ resource "google_compute_subnetwork" "k8s_subnet" {
 resource "google_compute_address" "cp_static_ip" {
   name   = "cp-static-ip-${local.rand_suffix}"
   region = var.region
+
+  depends_on = [time_sleep.wait_for_services]
 }
 
 # Allow ALL internal traffic within the subnet CIDR (all ports/protocols)
@@ -33,7 +35,10 @@ resource "google_compute_firewall" "allow_internal_all" {
     protocol = "all"
   }
 
-  source_ranges = [google_compute_subnetwork.k8s_subnet.ip_cidr_range]
+  source_ranges = [
+    google_compute_subnetwork.k8s_subnet.ip_cidr_range,
+    "192.168.0.0/16"
+  ]
 }
 
 

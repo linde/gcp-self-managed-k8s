@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 # Kernel and System Prep
 modprobe overlay
 modprobe br_netfilter
@@ -48,38 +47,54 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl
 
 # Node-specific initialization
+echo ">>> Configuring Kubelet for external Cloud Provider..."
+echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
+
 %{ if is_control_plane }
 if [ ! -f /etc/kubernetes/admin.conf ]; then
-  echo ">>> Bootstrapping IPv6 Kubernetes control plane..."
-  
-  echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
+  echo ">>> Bootstrapping Kubernetes control plane..."
 
+%{ if ipv6_enabled }
   echo ">>> Waiting for OS to configure global IPv6 address..."
   while true; do
-    IPV6_ADDR=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ipv6s)
-    if [ -n "$IPV6_ADDR" ]; then
+    CP_API_ADDR=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ipv6s)
+    if [ -n "$CP_API_ADDR" ]; then
       break
     fi
     sleep 2
   done
+  echo "Discovered IPv6 Address from Metadata Server: $CP_API_ADDR"
+%{ else }
+  CP_API_ADDR=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ip)
+  echo "Discovered IPv4 Address from Metadata Server: $CP_API_ADDR"
+%{ endif }
 
-  echo "Discovered IPv6 Address from Metadata Server: $IPV6_ADDR"
+  KUBEADM_ARGS=(
+    "--pod-network-cidr=${k8s_pod_cidr}"
+    "--apiserver-advertise-address=$CP_API_ADDR"
+    "--node-name=$(hostname)"
+    "--token=${kubeadm_token}"
+  )
 
-  # Initialize with IPv6 CIDRs
-  kubeadm init \
-    --skip-phases=addon/kube-proxy \
-    --pod-network-cidr=${k8s_pod_cidr_ipv6} \
-    --service-cidr=${k8s_service_cidr_ipv6} \
-    --apiserver-advertise-address="$IPV6_ADDR" \
-    --apiserver-cert-extra-sans="$IPV6_ADDR" \
-    --node-name=$(hostname) \
-    --token="${kubeadm_token}"
+%{ if ipv6_enabled }
+  KUBEADM_ARGS+=("--skip-phases=addon/kube-proxy" "--service-cidr=${k8s_service_cidr}" "--apiserver-cert-extra-sans=$CP_API_ADDR")
+%{ else }
+  KUBEADM_ARGS+=("--apiserver-cert-extra-sans=${cp_public_ip}")
+%{ endif }
+
+  # Initialize
+  kubeadm init "$${KUBEADM_ARGS[@]}"
+
+%{ if !ipv6_enabled }
+  # Replace the internal IP with the external IP in the config so external kubectl works out of the box
+  sed -i "s/server: https:\/\/$CP_API_ADDR:6443/server: https:\/\/${cp_public_ip}:6443/g" /etc/kubernetes/admin.conf
+%{ endif }
 
   export KUBECONFIG=/etc/kubernetes/admin.conf
   mkdir -p /root/.kube
   cp -i /etc/kubernetes/admin.conf /root/.kube/config
 
-  # Install Helm (Standalone Binary)
+  # Install Helm (Standalone Binary as per reference)
   echo ">>> Installing Helm..."
   curl -L https://get.helm.sh/helm-v3.17.1-linux-amd64.tar.gz | tar xz
   mv linux-amd64/helm /usr/local/bin/helm
@@ -89,6 +104,7 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Installing Cilium via Helm..."
   helm repo add cilium https://helm.cilium.io/
   helm repo update
+%{ if ipv6_enabled }
   helm upgrade --install cilium cilium/cilium --version 1.19.1 \
     --namespace kube-system \
     --set ipv4.enabled=false \
@@ -96,123 +112,64 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
     --set ipam.mode=kubernetes \
     --set routingMode=native \
     --set autoDirectNodeRoutes=true \
-    --set ipv6NativeRoutingCIDR="${k8s_pod_cidr_ipv6}" \
+    --set ipv6NativeRoutingCIDR="${k8s_pod_cidr}" \
     --set tunnelProtocol="" \
     --set k8s.requireIPv6PodCIDR=true \
     --set endpointRoutes.enabled=true \
     --set enableIPv6Masquerade=true \
     --set kubeProxyReplacement=true \
-    --set k8sServiceHost="$IPV6_ADDR" \
+    --set k8sServiceHost="$CP_API_ADDR" \
     --set k8sServicePort=6443 \
     --set operator.replicas=1
 
-  echo ">>> IPv6 Kubernetes cluster initialized with Cilium!"
+  # Fix CoreDNS upstream resolver for IPv6-only environments
+  echo ">>> Fixing CoreDNS to use IPv6 Google Public DNS..."
+  kubectl get configmap coredns -n kube-system -o yaml | sed 's\|forward . /etc/resolv.conf\|forward . 2001:4860:4860::6464 2001:4860:4860::64\|g' | kubectl apply -f -
+  kubectl rollout restart deployment/coredns -n kube-system
+%{ else }
+  helm upgrade --install cilium cilium/cilium --version 1.19.1 \
+    --namespace kube-system \
+    --set routingMode=native \
+    --set ipv4NativeRoutingCIDR=${k8s_pod_cidr} \
+    --set ipam.mode=kubernetes \
+    --set k8s.requireIPv4PodCIDR=true \
+    --set endpointRoutes.enabled=true \
+    --set gcp.enabled=true \
+    --set autoDirectNodeRoutes=true
+%{ endif }
 
+  echo ">>> Kubernetes cluster initialized with Cilium (Helm)!"
+
+%{ if ipv6_enabled }
   # Fix CoreDNS upstream resolver for IPv6-only environments
   echo ">>> Fixing CoreDNS to use IPv6 Google Public DNS..."
   kubectl get configmap coredns -n kube-system -o yaml | sed 's|forward . /etc/resolv.conf|forward . 2001:4860:4860::6464 2001:4860:4860::64|g' | kubectl apply -f -
   kubectl rollout restart deployment/coredns -n kube-system
+%{ endif }
   
   # Deploy Google Cloud Controller Manager (CCM)
   echo ">>> Deploying Google Cloud Controller Manager..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: cloud-controller-manager
-  namespace: kube-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: system:cloud-controller-manager
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin # Elevated for simplicity in example
-subjects:
-- kind: ServiceAccount
-  name: cloud-controller-manager
-  namespace: kube-system
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cloud-config
-  namespace: kube-system
-data:
-  gce.conf: |
-    [Global]
-    node-tags = k8s-node
----
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  labels:
-    component: cloud-controller-manager
-  name: cloud-controller-manager
-  namespace: kube-system
-spec:
-  selector:
-    matchLabels:
-      component: cloud-controller-manager
-  template:
-    metadata:
-      labels:
-        component: cloud-controller-manager
-    spec:
-      hostNetwork: true
-      serviceAccountName: cloud-controller-manager
-      nodeSelector:
-        node-role.kubernetes.io/control-plane: ""
-      tolerations:
-      - key: "node.cloudprovider.kubernetes.io/uninitialized"
-        value: "true"
-        effect: "NoSchedule"
-      - key: "node-role.kubernetes.io/control-plane"
-        effect: "NoSchedule"
-      containers:
-      - name: cloud-controller-manager
-        image: registry.k8s.io/cloud-provider-gcp/cloud-controller-manager:v32.2.5
-        command:
-        - /cloud-controller-manager
-        args:
-        - --cloud-provider=gce
-        - --configure-cloud-routes=true
-        - --allocate-node-cidrs=true
-        - --cluster-cidr=${k8s_pod_cidr_ipv6}
-        - --use-service-account-credentials=true
-        - --leader-elect=true
-        - --cloud-config=/etc/gce.conf
-        volumeMounts:
-        - name: cloud-config
-          mountPath: /etc/gce.conf
-          subPath: gce.conf
-          readOnly: true
-      volumes:
-      - name: cloud-config
-        configMap:
-          name: cloud-config
+  cat <<'EOF' | kubectl apply -f -
+${ccm_yaml}
 EOF
 
-
-else
   echo ">>> Kubernetes is already initialized."
 fi
 %{ else }
 if [ ! -f /etc/kubernetes/kubelet.conf ]; then
-  echo ">>> Joining IPv6 Kubernetes cluster..."
-  
-  echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
+  echo ">>> Joining Kubernetes cluster (with retries)..."
 
   for i in {1..30}; do
-    if kubeadm join [${cp_public_ipv6}]:6443 --token ${kubeadm_token} --discovery-token-unsafe-skip-ca-verification --node-name=$(hostname); then
+    if kubeadm join %{ if ipv6_enabled }[${cp_join_ip}]%{ else }${cp_join_ip}%{ endif }:6443 --token ${kubeadm_token} --discovery-token-unsafe-skip-ca-verification --node-name=$(hostname); then
       echo ">>> Successfully joined the cluster!"
       exit 0
     fi
     echo "Join failed (attempt $i/30), waiting 10 seconds..."
     sleep 10
   done
+  echo "ERROR: Failed to join cluster after multiple attempts."
   exit 1
+else
+  echo ">>> Kubernetes is already joined. Skipping kubeadm join."
 fi
 %{ endif }
