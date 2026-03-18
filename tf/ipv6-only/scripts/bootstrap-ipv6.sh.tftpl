@@ -52,6 +52,8 @@ apt-mark hold kubelet kubeadm kubectl
 if [ ! -f /etc/kubernetes/admin.conf ]; then
   echo ">>> Bootstrapping IPv6 Kubernetes control plane..."
   
+  echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
+
   echo ">>> Waiting for OS to configure global IPv6 address..."
   while true; do
     IPV6_ADDR=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/ipv6s)
@@ -69,7 +71,9 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
     --pod-network-cidr=${k8s_pod_cidr_ipv6} \
     --service-cidr=${k8s_service_cidr_ipv6} \
     --apiserver-advertise-address="$IPV6_ADDR" \
-    --apiserver-cert-extra-sans="$IPV6_ADDR"
+    --apiserver-cert-extra-sans="$IPV6_ADDR" \
+    --node-name=$(hostname) \
+    --token="${kubeadm_token}"
 
   export KUBECONFIG=/etc/kubernetes/admin.conf
   mkdir -p /root/.kube
@@ -106,62 +110,83 @@ if [ ! -f /etc/kubernetes/admin.conf ]; then
 
   # Fix CoreDNS upstream resolver for IPv6-only environments
   echo ">>> Fixing CoreDNS to use IPv6 Google Public DNS..."
-  cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns
-  namespace: kube-system
-data:
-  Corefile: |
-    .:53 {
-        errors
-        health {
-           lameduck 5s
-        }
-        ready
-        kubernetes cluster.local in-addr.arpa ip6.arpa {
-           pods insecure
-           fallthrough in-addr.arpa ip6.arpa
-           ttl 30
-        }
-        prometheus :9153
-        forward . 2001:4860:4860::6464 2001:4860:4860::64 {
-           max_concurrent 1000
-        }
-        cache 30 {
-           disable success cluster.local
-           disable denial cluster.local
-        }
-        loop
-        reload
-        loadbalance
-    }
-EOF
+  kubectl get configmap coredns -n kube-system -o yaml | sed 's|forward . /etc/resolv.conf|forward . 2001:4860:4860::6464 2001:4860:4860::64|g' | kubectl apply -f -
   kubectl rollout restart deployment/coredns -n kube-system
   
-  # Write the Join Command to Guest Attributes
-  # So that Terraform can natively read it without needing an IPv6 SSH connection.
-  echo ">>> Writing kubeadm join command to GCP Guest Attributes..."
-  JOIN_CMD=$(kubeadm token create --print-join-command)
-  curl -s -X PUT --data "$JOIN_CMD" -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/guest-attributes/kubeadm/join-command
+  # Deploy Google Cloud Controller Manager (CCM)
+  echo ">>> Deploying Google Cloud Controller Manager..."
+  cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin # Elevated for simplicity in example
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    component: cloud-controller-manager
+  name: cloud-controller-manager
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      component: cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        component: cloud-controller-manager
+    spec:
+      hostNetwork: true
+      serviceAccountName: cloud-controller-manager
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - key: "node.cloudprovider.kubernetes.io/uninitialized"
+        value: "true"
+        effect: "NoSchedule"
+      - key: "node-role.kubernetes.io/control-plane"
+        effect: "NoSchedule"
+      containers:
+      - name: cloud-controller-manager
+        image: registry.k8s.io/cloud-provider-gcp/cloud-controller-manager:v32.2.5
+        command:
+        - /cloud-controller-manager
+        args:
+        - --cloud-provider=gce
+        - --configure-cloud-routes=true
+        - --allocate-node-cidrs=true
+        - --cluster-cidr=${k8s_pod_cidr_ipv6}
+        - --use-service-account-credentials=true
+        - --leader-elect=true
+EOF
+
 
 else
   echo ">>> Kubernetes is already initialized."
 fi
 %{ else }
 if [ ! -f /etc/kubernetes/kubelet.conf ]; then
-  echo ">>> Joining IPv6 Kubernetes cluster (with 90s stagger per node)..."
+  echo ">>> Joining IPv6 Kubernetes cluster..."
   
-  # Stagger joins based on node index to ensure predictable PodCIDR assignment
-  # (Node 1 gets fd00:10:0:1::/64, Node 2 gets fd00:10:0:2::/64)
-  # 90 seconds gives plenty of time for earlier nodes to finish apt-get installs
-  STAGGER_TIME=$(( ${node_index} * 90 ))
-  echo ">>> Staggering join by $STAGGER_TIME seconds to prevent PodCIDR race conditions..."
-  sleep $STAGGER_TIME
+  echo 'KUBELET_EXTRA_ARGS="--cloud-provider=external"' > /etc/default/kubelet
 
   for i in {1..30}; do
-    if ${join_command}; then
+    if kubeadm join [${cp_public_ipv6}]:6443 --token ${kubeadm_token} --discovery-token-unsafe-skip-ca-verification --node-name=$(hostname); then
       echo ">>> Successfully joined the cluster!"
       exit 0
     fi

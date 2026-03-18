@@ -36,7 +36,8 @@ resource "google_compute_firewall" "allow_internal_ipv6_all" {
 
   source_ranges = compact([
     google_compute_subnetwork.k8s_subnet.external_ipv6_prefix,
-    google_compute_subnetwork.k8s_subnet.ipv6_cidr_range
+    google_compute_subnetwork.k8s_subnet.ipv6_cidr_range,
+    var.k8s_pod_cidr_ipv6
   ])
 }
 
@@ -51,7 +52,7 @@ resource "google_compute_firewall" "allow_management_ipv6" {
     ports    = ["22", "6443"]
   }
 
-  source_ranges = ["::/0"]
+  source_ranges = var.management_allowed_ipv6_cidrs
 }
 
 # Cloud Router and NAT (NAT64)
@@ -76,21 +77,3 @@ resource "google_compute_router_nat" "nat" {
   # and the NAT is configured.
 }
 
-# Route for Control Plane Pod IPs (For Native Routing)
-resource "google_compute_route" "cp_pod_route" {
-  name              = "k8s-pod-route-cp-${local.rand_suffix}"
-  dest_range        = "fd00:10::/64" # kubeadm's 1st allocated subnet
-  network           = google_compute_network.k8s.name
-  next_hop_instance = google_compute_instance.cp_node.id
-  priority          = 1000
-}
-
-# Route for Worker Node Pod IPs (For Native Routing)
-resource "google_compute_route" "worker_pod_route" {
-  count             = var.worker_node_count
-  name              = "k8s-pod-route-worker-${count.index + 1}-${local.rand_suffix}"
-  dest_range        = "fd00:10:0:${count.index + 1}::/64" # kubeadm's 2nd+ allocated subnet
-  network           = google_compute_network.k8s.name
-  next_hop_instance = google_compute_instance.worker_node[count.index].id
-  priority          = 1000
-}

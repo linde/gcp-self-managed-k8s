@@ -32,6 +32,7 @@ resource "google_compute_instance" "cp_node" {
   }
 
   service_account {
+    email  = google_service_account.k8s_node.email
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   }
 
@@ -41,23 +42,29 @@ resource "google_compute_instance" "cp_node" {
     k8s_pod_cidr_ipv6     = var.k8s_pod_cidr_ipv6
     is_control_plane     = true
     node_index           = 0
-    join_command         = ""
+    kubeadm_token        = local.kubeadm_token
+    cp_public_ipv6       = ""
   })
 
   depends_on = [time_sleep.wait_for_services]
 }
 
-# Fetch the join command using the dynamic external IPv6
-resource "ssh_resource" "get_join_command" {
-  host        = google_compute_instance.cp_node.network_interface[0].ipv6_access_config[0].external_ipv6
-  user        = "admin"
-  private_key = tls_private_key.vm_ssh_key.private_key_openssh
-  timeout     = "10m"
+resource "random_string" "token_id" {
+  length  = 6
+  lower   = true
+  numeric = true
+  upper   = false
+  special = false
+}
 
-  commands = [
-    "while [ ! -f /etc/kubernetes/admin.conf ]; do sleep 5; done",
-    "sudo kubeadm token create --print-join-command"
-  ]
+resource "random_string" "token_secret" {
+  length  = 16
+  lower   = true
+  numeric = true
+  upper   = false
+  special = false
+}
 
-  depends_on = [google_compute_instance.cp_node]
+locals {
+  kubeadm_token = "${random_string.token_id.result}.${random_string.token_secret.result}"
 }

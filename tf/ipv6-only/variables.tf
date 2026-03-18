@@ -45,6 +45,12 @@ variable "worker_node_count" {
   description = "The number of worker nodes to provision."
 }
 
+variable "management_allowed_ipv6_cidrs" {
+  type        = list(string)
+  default     = ["::/0"]
+  description = "List of IPv6 CIDRs allowed to access SSH and the K8s API. Defaults to everywhere for demo purposes but should be restricted."
+}
+
 resource "random_id" "rand" {
   byte_length = 4
 }
