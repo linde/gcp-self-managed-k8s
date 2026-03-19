@@ -1,6 +1,6 @@
 # Extract CCM YAML from Bootstrap Scripts
 
-> *STATUS*: implemented!
+> *STATUS*: completed
 
 This plan outlines extracting the inline Google Cloud Controller Manager (CCM) YAML from the bash bootstrap scripts into a shared Terraform template file. This allows maintaining Kubernetes manifest separately from the bash initialization scripts.
 

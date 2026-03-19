@@ -1,6 +1,6 @@
 # Plan: Prevent Leaked GCP Routes During Teardown
 
-> *STATUS*: in flight
+> *STATUS*: completed
 
 ## Problem Description
 By enabling the Google Cloud Controller Manager (CCM) to handle native routing (`--configure-cloud-routes=true` and `--allocate-node-cidrs=true`), the CCM dynamically creates `google_compute_route` objects in GCP for every Kubernetes node to route traffic to its assigned Pod CIDR.

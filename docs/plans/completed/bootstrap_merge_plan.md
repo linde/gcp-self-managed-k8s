@@ -1,6 +1,6 @@
 # Bootstrap Script Merge Implementation Plan
 
-> *STATUS*: implemented!
+> *STATUS*: completed
 
 This plan outlines the refactoring strategy to merge `tf/ipv6-only/scripts/bootstrap-ipv6.sh.tftpl` and `tf/vanilla/scripts/bootstrap.sh.tftpl` into a single, unified `tf/scripts/bootstrap.sh.tftpl` template.
 

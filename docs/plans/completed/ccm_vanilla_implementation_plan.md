@@ -1,6 +1,6 @@
 # Vanilla Cluster: Google Cloud Controller Manager (CCM) Implementation Plan
 
-> *STATUS*: Implemented
+> *STATUS*: completed
 
 This document outlines the exact steps to migrate the Vanilla (IPv4) cluster implementation to use the external Google Cloud Controller Manager (CCM) and deterministic token joining, mimicking the successful IPv6-only transition. This will completely remove the fragile SSH commands and hardcoded Terraform static routes.
 
