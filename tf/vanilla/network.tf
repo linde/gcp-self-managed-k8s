@@ -1,4 +1,3 @@
-
 resource "google_compute_network" "k8s" {
   name                    = "k8s-network-${local.rand_suffix}"
   project                 = var.gcp_project

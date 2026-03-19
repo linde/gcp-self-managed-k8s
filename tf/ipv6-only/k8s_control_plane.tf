@@ -51,7 +51,18 @@ resource "google_compute_instance" "cp_node" {
     })
   })
 
-  depends_on = [time_sleep.wait_for_services]
+  # Remove node from cluster on destroy so we clean up cloud controller managed GCP resources
+  provisioner "local-exec" {
+    when    = destroy
+    command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${path.module}/.tmp/vm_key admin@${self.network_interface[0].ipv6_access_config[0].external_ipv6} 'sudo kubectl --kubeconfig /etc/kubernetes/admin.conf delete node ${self.name} && sleep 20'"
+  }
+
+  depends_on = [
+    time_sleep.wait_for_services, 
+    local_file.private_key,
+    google_compute_firewall.allow_management_ipv6,
+    google_compute_firewall.allow_internal_ipv6_all
+  ]
 }
 
 resource "random_string" "token_id" {

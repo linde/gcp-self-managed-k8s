@@ -76,4 +76,3 @@ resource "google_compute_router_nat" "nat" {
   # NAT64 is enabled automatically by GCP when the subnet is IPv6-only
   # and the NAT is configured.
 }
-

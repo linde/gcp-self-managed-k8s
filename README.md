@@ -45,11 +45,9 @@ export KUBECONFIG=$(pwd)/.tmp/kubeconfig.yaml
 # repeat if you get: `cat: /etc/kubernetes/admin.conf: No such file or directory`
 ssh -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP} "sudo cat /etc/kubernetes/admin.conf" > ${KUBECONFIG}
 
-# watch as the pods come up
-watch kubectl get pods -A -o wide
-
-# Verify the cluster
-kubectl get nodes -o wide
+# watch as the pods, then nodes come up
+ kubectl get nodes,pods -A
+ 
 ```
 
 ### See it in action
@@ -97,7 +95,7 @@ We encourage you to experiment! If you started with the `vanilla` implementation
 
 ---
 
-## 2. Infrastructure Details (IPv6-Only Quirks)
+## 2. Infrastructure Details / Quirks
 
 This repository demonstrates how to solve several quirks when running **eBPF (Cilium)** in an **IPv6-Only** Google Cloud environment.
 
@@ -106,6 +104,7 @@ This repository demonstrates how to solve several quirks when running **eBPF (Ci
 - **NAT64:** Configured via Cloud NAT to allow the cluster to reach IPv4-only services (like GitHub or Docker Hub).
 - **Cilium:** Installed via Helm during bootstrap with `ipv6.enabled=true`, `ipv4.enabled=false`, and `routingMode=native`.
 - **CoreDNS Upstream**: A configmap patch forces CoreDNS to utilize Google's Public DNS64 endpoints (`2001:4860:4860::6464`) to restore external resolution to pods since the host `systemd-resolved` doesn't pass native IPv6 DNS effectively.
+- **CCM Leaked Routes on Teardown:** When using GCP Native Routing, the Cloud Controller Manager dynamically creates VPC network routes outside of Terraform's state. Left completely alone, `terraform destroy` will fail and hang because GCP blocks VPC deletion while these orphaned routes still depend on it. To mitigate this without relying on external CLI tools, the Terraform worker nodes use a `local-exec` provisioner during destruction to SSH into the Control Plane and gracefully execute `kubectl delete node`. This allows the CCM to automatically clean up its own VPC routes before the underlying VM is destroyed. See the [CCM Leaked Routes Plan](docs/plans/ccm_leaked_routes_plan.md) for details.
 
 ### IPv6 Debugging utilities
 

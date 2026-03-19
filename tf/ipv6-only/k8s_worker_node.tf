@@ -32,6 +32,7 @@ resource "google_compute_instance" "worker_node" {
 
   metadata = {
     "ssh-keys" = "admin:${tls_private_key.vm_ssh_key.public_key_openssh}"
+    "cp-ipv6"  = google_compute_instance.cp_node.network_interface[0].ipv6_access_config[0].external_ipv6
   }
 
   service_account {
@@ -51,5 +52,11 @@ resource "google_compute_instance" "worker_node" {
     ccm_yaml          = ""
   })
 
-  depends_on = [google_compute_instance.cp_node]
+  # Remove node from cluster on destroy so we clean up cloud controller managed GCP resources
+  provisioner "local-exec" {
+    when    = destroy
+    command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${path.module}/.tmp/vm_key admin@${lookup(self.metadata, "cp-ipv6", "::1")} 'sudo kubectl --kubeconfig /etc/kubernetes/admin.conf delete node ${self.name}'"
+  }
+
+  depends_on = [google_compute_instance.cp_node, local_file.private_key]
 }

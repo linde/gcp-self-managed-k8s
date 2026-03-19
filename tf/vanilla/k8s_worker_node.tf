@@ -29,6 +29,7 @@ resource "google_compute_instance" "worker_node" {
   # Injects the public key we generated into the VM
   metadata = {
     "ssh-keys" = "admin:${tls_private_key.vm_ssh_key.public_key_openssh}"
+    "cp-ip"    = google_compute_address.cp_static_ip.address
   }
 
   # Use templatefile with the join command captured via SSH
@@ -44,7 +45,13 @@ resource "google_compute_instance" "worker_node" {
     ccm_yaml         = ""
   })
 
+  # Remove node from cluster on destroy so we clean up cloud controller managed GCP resources
+  provisioner "local-exec" {
+    when    = destroy
+    command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ${path.module}/.tmp/vm_key admin@${lookup(self.metadata, "cp-ip", "127.0.0.1")} 'sudo kubectl --kubeconfig /etc/kubernetes/admin.conf delete node ${self.name}'"
+  }
+
   # Explicitly depend on services being ready and the join command being available
-  depends_on = [time_sleep.wait_for_services, google_compute_instance.cp_node]
+  depends_on = [time_sleep.wait_for_services, google_compute_instance.cp_node, local_file.private_key]
 }
 
