@@ -6,3 +6,4 @@ terraform.tfstate*
 
 terraform.tfvars
 .tmp
+*_sonobuoy_*.tar.gz
