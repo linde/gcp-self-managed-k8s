@@ -16,5 +16,22 @@ In an IPv6-only cluster running on GCP, direct routing between nodes relies on p
 
 ## Actionable Next Steps
 - Review the `terraform/gcp` configuration for VPC routing.
-- Check the Cilium Helm values regarding `ipv6` native routing CIDR.
-- Deploy a test DaemonSet that attempts IPv6 ND to other nodes and verify ICMPv6 reachability.
+- Check the Cilium Helm values regarding `ipv6` native routing CIDR. Currently, `autoDirectNodeRoutes=true` is set alongside `routingMode=native`, which may be failing if GCP VPC doesn't route the PodCIDRs intrinsically without BGP.
+
+## Verification Workload
+To concretely test if cross-node direct routing is fixed, use the `reachability-test` workload provided in `docs/examples/config/`:
+1. **Deploy the Agent DaemonSet**:
+   ```bash
+   kubectl apply -f docs/examples/config/reachability-daemonset.yaml
+   ```
+   This deploys an HTTP agent on every node that reports its node/pod IP and can execute requests to other target IPs.
+2. **Run the Client Mesh Test**:
+   ```bash
+   kubectl apply -f docs/examples/config/reachability-client.yaml
+   ```
+   This deploys a single client Pod which automatically discovers all Agent IPs and commands every agent to ping every other agent.
+3. **Verify Results**:
+   ```bash
+   kubectl logs reachability-client -n reachability-test
+   ```
+   If direct routing is functioning correctly, all cross-node requests will succeed with `HTTP 200` responses and no `Connection Timeout` or `No route to host` errors.
