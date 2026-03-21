@@ -109,6 +109,11 @@ This repository demonstrates how to solve several quirks when running **eBPF (Ci
 ### IPv6 Debugging utilities
 
 ```bash
+
+# to watch the control plan script run
+ssh -F /dev/null -o StrictHostKeyChecking=no -i .tmp/vm_key admin@${CP_IP}  \
+  "sudo journalctl  -u google-startup-scripts.service -f " | sed 's-^.*/bin/bash.*: --g'
+
 # use the following to try out networking tools within a pod on the cluster
 kubectl run -i --tty --rm debug-session --image=jonasal/network-tools --restart=Never -- /bin/bash
 
