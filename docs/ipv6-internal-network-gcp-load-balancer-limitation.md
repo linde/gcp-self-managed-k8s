@@ -39,3 +39,11 @@ EOF
 ```
 
 This violates infrastructure drift detection, pollutes the terraform execution dependencies, and requires the user to have valid `gcloud` credentials installed and authenticated in the deployment environment. Once Hashicorp introduces native `ipv6_address` definitions within `google_compute_network_endpoint`, this gross workaround should immediately be reverted.
+
+## Mitigation via Global Load Balancing
+
+If your architecture permits the use of a **Global External Proxy Network Load Balancer** instead of a Regional one, this specific limitation can be avoided entirely.
+
+Global Proxy Load Balancers (`google_compute_global_forwarding_rule`, `google_compute_target_tcp_proxy`) support routing directly to a standard **Unmanaged Instance Group** (`google_compute_instance_group`) containing IPv6-only backends. By explicitly configuring the `google_compute_backend_service` with `ip_address_selection_policy = "IPV6_ONLY"`, GCP natively bridges external traffic to the internal IPv6 backends without requiring Zonal NEGs or the non-idiomatic `null_resource` workaround.
+
+For a fully working implementation of the Global Load Balancer pattern, refer to the [`tf/ipv6-ula-networking-reference`](../tf/ipv6-ula-networking-reference) directory.
