@@ -19,7 +19,7 @@ resource "google_compute_instance" "cp_node" {
   network_interface {
     network    = google_compute_network.k8s.id
     subnetwork = google_compute_subnetwork.k8s_subnet.id
-    
+
     # IPv6 Stack configuration
     stack_type = "IPV6_ONLY"
 
@@ -38,15 +38,15 @@ resource "google_compute_instance" "cp_node" {
   }
 
   metadata_startup_script = templatefile("${path.module}/../scripts/bootstrap.sh.tftpl", {
-    k8s_version       = var.k8s_version
-    k8s_service_cidr  = var.k8s_service_cidr_ipv6
-    k8s_pod_cidr      = var.k8s_pod_cidr_ipv6
-    cp_public_ip      = ""
-    cp_join_ip        = ""
-    is_control_plane  = true
-    ipv6_enabled      = true
-    kubeadm_token     = local.kubeadm_token
-    ccm_yaml          = templatefile("${path.module}/../scripts/ccm.yaml.tftpl", {
+    k8s_version      = var.k8s_version
+    k8s_service_cidr = var.k8s_service_cidr_ipv6
+    k8s_pod_cidr     = var.k8s_pod_cidr_ipv6
+    cp_public_ip     = ""
+    cp_join_ip       = ""
+    is_control_plane = true
+    ipv6_enabled     = true
+    kubeadm_token    = local.kubeadm_token
+    ccm_yaml = templatefile("${path.module}/../scripts/ccm.yaml.tftpl", {
       cluster_cidr = var.k8s_pod_cidr_ipv6
     })
   })
@@ -58,7 +58,7 @@ resource "google_compute_instance" "cp_node" {
   }
 
   depends_on = [
-    time_sleep.wait_for_services, 
+    time_sleep.wait_for_services,
     local_file.private_key,
     google_compute_firewall.allow_management_ipv6,
     google_compute_firewall.allow_internal_ipv6_all

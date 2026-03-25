@@ -20,10 +20,10 @@ resource "google_compute_instance" "worker_node" {
   network_interface {
     network    = google_compute_network.k8s.id
     subnetwork = google_compute_subnetwork.k8s_subnet.id
-    
+
     # IPv6 Stack configuration
     stack_type = "IPV6_ONLY"
-    
+
     # Optional: Dynamic external IPv6 for management/debugging
     ipv6_access_config {
       network_tier = "PREMIUM"
@@ -41,15 +41,15 @@ resource "google_compute_instance" "worker_node" {
   }
 
   metadata_startup_script = templatefile("${path.module}/../scripts/bootstrap.sh.tftpl", {
-    k8s_version       = var.k8s_version
-    k8s_service_cidr  = var.k8s_service_cidr_ipv6
-    k8s_pod_cidr      = var.k8s_pod_cidr_ipv6
-    cp_public_ip      = ""
-    cp_join_ip        = google_compute_instance.cp_node.network_interface[0].ipv6_access_config[0].external_ipv6
-    is_control_plane  = false
-    ipv6_enabled      = true
-    kubeadm_token     = local.kubeadm_token
-    ccm_yaml          = ""
+    k8s_version      = var.k8s_version
+    k8s_service_cidr = var.k8s_service_cidr_ipv6
+    k8s_pod_cidr     = var.k8s_pod_cidr_ipv6
+    cp_public_ip     = ""
+    cp_join_ip       = google_compute_instance.cp_node.network_interface[0].ipv6_access_config[0].external_ipv6
+    is_control_plane = false
+    ipv6_enabled     = true
+    kubeadm_token    = local.kubeadm_token
+    ccm_yaml         = ""
   })
 
   # Remove node from cluster on destroy so we clean up cloud controller managed GCP resources

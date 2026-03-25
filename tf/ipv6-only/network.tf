@@ -12,11 +12,11 @@ resource "google_compute_network" "k8s" {
 }
 
 resource "google_compute_subnetwork" "k8s_subnet" {
-  name          = "k8s-subnet-ipv6-${local.rand_suffix}"
-  project       = var.gcp_project
-  network       = google_compute_network.k8s.id
-  region        = var.region
-  
+  name    = "k8s-subnet-ipv6-${local.rand_suffix}"
+  project = var.gcp_project
+  network = google_compute_network.k8s.id
+  region  = var.region
+
   # For IPV6_ONLY stack, NO ip_cidr_range (IPv4) should be provided.
   stack_type       = "IPV6_ONLY"
   ipv6_access_type = "EXTERNAL"
