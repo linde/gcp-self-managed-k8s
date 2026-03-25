@@ -14,24 +14,25 @@ graph TD
             NAT[Cloud NAT64 & Router]
             Subnet[Subnetwork: IPV6_ONLY, EXTERNAL]
             FW[Firewall: Allow TCP 22, 80 from ::/0]
-            Route[Route: 64:ff9b::/96 to default-internet-gateway]
+            Route[Route: 64:ff9b::/96 & Default Route to Internet]
             
-            subgraph "Compute Instance (e2-micro)"
-                VM[IPv6-Only VM]
-                Nginx[Nginx Web Server]
-            end
+            VM["Compute Instance (e2-micro)<br/>IPv6-Only VM & Nginx"]
         end
     end
 
-    Client[IPv6 Client]
-    IPv4Internet[IPv4-Only Internet e.g. github.com]
+    Client["💻 IPv6 Client"]
+    IPv4Internet["☁️ IPv4-Only Internet e.g. github.com"]
+    IPv6Internet["☁️ IPv6 Internet e.g. deb.debian.org"]
     
     %% Traffic flows
-    Client -->|"curl -6 http://[VM_IPv6]"| VM
-    Client -->|"ssh -i .tmp/id_ed25519 admin@VM_IPv6"| VM
-    VM -->|NAT64/DNS64 Translation| NAT
-    NAT -->|IPv4 Traffic| IPv4Internet
-    DNS -.->|Synthesize AAAA records for IPv4-only domains| VM
+    Client -->|"curl -6 http://[VM_IPv6]"| FW
+    Client -->|"ssh -i .tmp/id_ed25519 admin@VM_IPv6"| FW
+    FW -->|"Permitted inbound TCP 22, 80"| VM
+    VM -->|"Native IPv6 Traffic (e.g. apt-get)"| Route
+    Route -->|"Direct to IPv6 Internet"| IPv6Internet
+    VM -->|"IPv4-bound Traffic (using NAT64/DNS64)"| NAT
+    NAT -->|"Translated IPv4 Traffic"| IPv4Internet
+    DNS -.->|"Synthesize AAAA records for IPv4-only domains"| VM
 ```
 
 ## Setup & Deployment
